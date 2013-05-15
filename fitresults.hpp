@@ -1,4 +1,4 @@
-ke th#ifndef FITRESULTS_H
+#ifndef FITRESULTS_H
 #define FITRESULTS_H
 
 

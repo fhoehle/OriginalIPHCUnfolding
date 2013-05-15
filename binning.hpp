@@ -12,7 +12,7 @@
 //#define MADGRAPH
 
 const double drawfactor = 1; // multiplied to predictions, so more events are drawn per experiment
-
+const double lumi_factor = 1; // FH
 // switch diffabsy sign of all wjets events for inverted asy contribution
 const bool sys_invert_wjets = false; 
 
