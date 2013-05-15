@@ -1,0 +1,175 @@
+Dear all,
+
+just for the first mail (hopefully the last one if there will be no further need of help from Jeremy ;) I include the direct interested: Jeremy who need the 2D unfolding and Frank and Thorsten who are those people I received the code from (Thanks again btw :-)
+
+Here is my little manual (asap I will start the taring and the copy to an accessible directory of the code, the end of which I will notify later):
+
+---------- MANUAL -------------------
+
+As first thing I will include the original README from Frank Roscher. It might be a little bit outdated w.r.t. the code I'm sending you, but the general structure being the same, is of great help.
+
+Original README from Frank:
+
+folder "consistency" - consistency checks, not cleaned up; I might explain those later, no time at the moment.
+
+
+HEADERS
+
+--- binning.hpp
+This contains a lot of flags concerning the operation of the code. A lot of specific stuff for tests and experiments we did. Most of it should be of no concern to you, I guess.
+Important:
+  - The arrays which contain the binnings for the different measurements. xedgesrec, yedgesrec, xedgesgen, yedgesgen.
+  - The regularisation parameters logtau_for_binning for each measurement.
+  - preprocessor variables
+    FINDTAU - when activated, myunfold class will do rhoaverage tests to find optimal regularisation parameter tau
+    BINNING_M_ABSY_MANYYBINS - used to switch between different differential measurements (M,PT,Y)
+    BUILD_1D_BASIS - activate to switch seleffmatrix.cpp and migrationmatrix.cpp over to 1d mode. deactivate for everything else.
+   
+A lot of the variables have 1d pendants, some of which are only active when BUILD_1D_BASIS is enabled. Sorry for this mess.   
+   
+--- helpers.hpp
+Yeah, just a few small helper functions, most important:
+ - asymmetry error calculation for different scenarios
+
+--- specialhelpers.hpp
+Additional helpers - these rely on the binning in binning.hpp. Important:
+ - unwrapping 2d histograms into 1d histograms
+ 
+--- myh2.hpp
+This implements the special sort of histogram we use, with different binnings of the y-axis for each bin of the x-axis.
+Not directly compatible with ROOT histograms, but should be easy enough to use.
+This file is commented thoroughly, so you shouldn't have too many problems with this.
+
+
+--- myunfold_class(1d).hpp
+As the name implies, this class does most of the heavy lifting; so there's a lot going on here. The 1d case gets its own code in this case, but mostly it's very close to the 2d one.
+
+In the constructor, the reconstructed distributions of all backgrounds are read out of tuples and filled into MyH2 histograms. They are rotated according to the eigenvectors/eigenvalues of the covariance matrix of our background estimation
+(bglist_nonrot->bglist,bgwrappedlist);
+this achieves a decorrelation.
+
+In the unfoldHisto method, TUnfoldSys is used with a bias distribution taken from our ttbar MC sample. This bias distribution is normalized to the approximate number of unfolded events we expect (bg-subtracted events divided by selection efficiency).
+Tunfold is told to subtract the decorrelated backgrounds with their respective errors.
+myRegularizeBins then defines the regularization conditions; these are pretty special because our binning allows overlaps of varying size. It's well-commented.
+Then either the unfolding is performed normally or, if demanded by binning.hpp, minimizeRhoAverage is called which tries to find the correct regularisation parameter by minimizing the average bin-by-bin correlations in several iterations.
+
+
+PROGRAMS
+Just covering the programs which are needed for a measurement.
+
+--- seleffmatrix.cpp
+Generates a root file seleff.root which contains the selection efficiency for the currently selected measurement (in binning.hpp).
+For that it loops over a tuple which contains all MC ttbar events before selection and one which contains the reconstructed events.
+
+--- migmatrix.cpp
+Similarly to seleffmat.cpp, this loops over tuples containing the reconstructed events and constructs the migration matrix as basically a plot of reconstructed values against generator values. The combination of electron and muon channel takes into account that the ele/mu fraction in our bg estimation can be different from the one in MC.
+
+--- classy_unfold(1d).cpp
+This performs the measurement using the MyUnfold class. Most of the logic here is for plotting the result and calculating the errors using helpers.hpp.
+
+General comments from me:
+
+1) Each macro must be compiled and then it can be executed this way:
+
+g++ myMacro.cpp -g -O2 -fPIC -o myMacro.exec -I `root-config --incdir` `root-config --libs` `root-config --ldflags`
+
+./myMacro.exec
+
+I remember that at the beginning I had to struggle a little with root, because the macro were either not compiling or not running. I suggest you to try with the root you have installed, maybe you are lucky and it will work. Otherwise track the problem from the error message. In my case it was related with some environment variable library and so on. If you need help, sent a message to the assistance (Marco.Cardaci@cern.ch).
+
+2) Surprisingly ( LoL ) in the file samplelocations.hpp you can set the location of the input tuples (the tuples are flat trees that you will need to produce from the NTuples, I will explain more later in the text).
+
+The names are very intuitive, but have not been adapted to the dilpetonic case, for lack of time. For instance sl_ttbarele indicates in the original code semi-leptonic electron channel, but now it's instead the dileptonic channel and it's the sum of ee, mumu and emu channels. This means that in all the notation of the macros the electron channel will instead be the sum of the three dilepton channels, while the muon channel variables are not used anymore.
+
+There are also files which are called preselected. This kind of files are used for binning optimization at gen level and need to be produced from NTuples files with no skimming or selection at all (so not even the dilepton preselection!).
+
+There are also other macros where the tuples are inputted, but I will talk about them case by case.
+
+3) fitresults.hpp it's called like this, again for historical reasons. In the single-lepton analysis the background are estimated from a simultaneous fit, while in the dilepton analysis the backgrounds are estimated with various techniques. The beta factors must be set to 1 because they are also a remnant of the simultaneous fitting procedure.
+
+The sequence:
+
+The sequence in which the macros need to be complied and then executed (which means that your first compile a macro and you execute it and then you go to the next one) is:
+
+findbinning.cpp
+
+seleffmatrix.cpp
+
+migrationmatrix.cpp
+
+pseudoexp.cpp (to find the regularisation value)
+
+lincheck.cpp
+
+pseudoexp.cpp (for the consistency check on the pull)
+
+plotsforpseudo.cpp to plot the above lincheck and pseudoexp results.
+
+Now, let me comment on the various steps.
+
+-- findbinning.cpp
+
+You can find the optimal binning for the 1D case and 2D case. For the generator level and the reconstructed level. And, of course for each differentiating variable (for the charge asymmetry we had 3). So, for the case of the Charge Asymmetry we had 2 x 2 x 3 = 12 optimisations to be performed. Each time you perform an optimisation remember to change the getBinning function with the right one (ten vs. deco and 1D vs. 2D) and then compile the macro and run it. Also, in association with the type of getBinning function you use, remember to use the correct file in input from file_ttbar and and ch.Add. You will need the preselected level file for the gen getBinning and the selection level file for the reco getBinning cases.
+
+Once you have found the optimal binning, you can replace it in the binning.hpp file, which is a stearing file. I will talk more about it later in the text.
+
+-- seleffmatrix.cpp and migrationmatrix.cpp
+
+You always need to run first the seleffmatrix.cpp and then the migrationmatrix.cpp You might compile them at the same time I think, but the running is according to that sequence.
+
+These macros will produce seleff.root and migmatrix.root, containing what you can easily guess from the names.
+
+Each time you run the efficiency-migmatrix sequence you want to set in binning which case you are interested in. The following case will select a given observable and produce the matrices for the 2D case:
+
+// when defined, number of pseudoexperiments is reduced in favor of doing rho-avg-tests
+//#define FINDTAU
+
+//#define BINNING_M_ABSY_MANYYBINS
+#define BINNING_Y_ABSY_MANYYBINS
+//#define BINNING_PT_ABSY_MANYYBINS
+
+// use this when creating migration matrix and selection efficiency to get the data for later 1d unfolding.
+// will be saved alongside 2d data, won't overwrite it.
+//#define BUILD_1D_BASIS
+
+If you want to enable 1D instead of 2D, you need to use the above define of the 1D basis (so, the default case is 2D, while 1D must be asked explicitly).
+
+-- pseudoexp.cpp (to find the regularisation value)
+
+This is the only case where you can go to binning.hpp and set the define of the FINDTAU. Remember that when you use the FINDTAU, for no reason you have to enable the 1D basis. When you run pseudoexp.cpp check what's the value of:
+
+numexperiments
+
+which is the number of pseudo-experiences. You want to use an appropriate number as it is explained in the commentary of the code.
+
+Also, this is the part which is taking the most of the time. So, don't worry if it will take you half a day ;) to find the optimal value for tau. This is life ;)
+
+You will find the result of the optimised tau (regularisation parameter) value in log10taus and log10taus1d histos of the root file pseudo_tau.root
+
+-- lincheck.cpp
+
+In this case the two "forbidden" environment variables are FINDTAU and BUILD_1D_BASIS. Also, make sure that you use an appropriate number of numexperiments in lincheck.cpp
+
+-- pseudoexp.cpp (for the consistency check on the pull)
+
+In this case you remove FINDTAU as done before and change numexperiments in pseudoexp.cpp
+
+-- plotsforpseudo.cpp to plot the above lincheck and pseudoexp results
+
+This should be quite intuitive\u2026
+
+There would be a lot to say about:
+
+myunfold_class.hpp
+myunfold_class1d.hpp
+
+But you don't need to know all the details to perform the unfolding. Eventually, if you will need to know anything about those two fellow macros, you can still call the assistance for free, if you are still under guarantee ;)
+
+
+Producing tuples:
+
+The tuples are flat tree which must contain a minimal set of histograms of variables such as the sensitive variable and the differentiating variables. According to which sample you want to produce (skimmed vs. non-skimmed, signal dilleptonic vs. single-leptonic, etc.) you will need to slightly modify the macro which is producing the flat trees. Don't worry I provide you with all the macros. You will have a lot of them to enjoy and to play with :-)
+
+That's it for the moment.
+
+---------- END OF THE MANUAL -------------------
